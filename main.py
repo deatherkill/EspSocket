@@ -55,14 +55,13 @@ def socks():
         try:
             global off_time
             client, addr = s.accept()
-            client.settimeout(1)
             content = client.recv(1024).decode()
             # print(content)
             temp_time = dt.now().strftime('%Y-%m-%d, %H:%M:%S')
             write_to_log(f'Received from ESP: {content}, at: {temp_time} \n')
             if content == 'Power is OK':
                 off_time = int(time.time())
-        except socket.error as e:
+        except OSError as e:
             print('Socket Error:', e)
             temp_time = dt.now().strftime('%Y-%m-%d, %H:%M:%S')
             write_to_log(f'Socket error connection at: {temp_time} \n')
@@ -73,7 +72,6 @@ def socks():
 
 def timer():
     global prev_state, cur_time, state, server_status
-    prev_state = True
     while True:
         cur_time = int(time.time())
         state = not (cur_time > off_time + delay_time)
@@ -86,7 +84,7 @@ def timer():
                 bot.send_message(chat_id=group_id, text=f'🟢 Power is ON at: {timestamp}', timeout=5)
                 server_status = '🟢'
                 write_to_log(f'Change status: Power is ON at: {timestamp}, state={state}, prev_state={prev_state} \n')
-            elif not state:
+            elif not state and not power_check:
                 print('Off', dt.now().strftime('%Y-%m-%d, %H:%M:%S'))
                 timestamp = dt.now().strftime('%Y-%m-%d, %H:%M:%S')
                 bot.send_message(chat_id=group_id, text=f'🔴 Power is OFF at: {timestamp}', timeout=5)
@@ -95,7 +93,7 @@ def timer():
                              f' Application time: {cur_time},'
                              f' Delay time: {off_time + delay_time},'
                              f', state={state}, prev_state={prev_state} \n')
-        prev_state = state
+            prev_state = state
         time.sleep(0.1)
 
 
@@ -116,7 +114,7 @@ def send_welcome(message):
         file_obj = BytesIO(msg)
         file_obj.name = 'log.txt'
     bot.reply_to(message, text=f'Log file opened: {msg}')
-    bot.send_document(chat_id, data=file_obj, caption="Log file updated")
+    bot.send_document(chat_id, document=file_obj)
 
 
 @bot.message_handler(commands=['clearlog'])
@@ -133,21 +131,24 @@ def send_welcome(message):
     bot.reply_to(message, text=f'Log updated, states: state={state}, prev_state={prev_state}, open socket: {result}')
 
 
-@bot.message_handler(commands=['state'])
+@bot.message_handler(commands=['restart'])
 def send_welcome(message):
     bot.reply_to(message, text=f'Restarting process')
-    os.execv(__file__, sys.argv)
+    os.popen("sudo systemctl restart esp")
 
 
 if __name__ == "__main__":
     global s
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    except socket.error as e:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    except OSError as e:
         print('Socket connection error')
+        temp_time = dt.now().strftime('%Y-%m-%d, %H:%M:%S')
+        write_to_log(f'Socket error connection at: {temp_time}, type={s.proto} \n')
         os.system("sudo systemctl restart esp")
     if LINUX:
-        s.bind(('185.25.118.34', port))
+        s.bind(('', port))
     elif WIN:
         s.bind(('0.0.0.0', port))
     s.listen(0)
@@ -159,12 +160,12 @@ if __name__ == "__main__":
     off_time = 0
     delay_time = 30
     cur_time = time.time()
-    state = False
+    state = True
     prev_state = False
     temp_time = dt.now().strftime('%Y-%m-%d, %H:%M:%S')
     write_to_log(f'Application started at: {temp_time} \n')
     print(f"IP Address: {ip_address}")
-
+    bot.send_message(chat_id=chat_id, text=f'Bot started successfully', timeout=5)
     t1 = threading.Thread(target=timer)
     t2 = threading.Thread(target=socks)
     t2.start()
