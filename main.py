@@ -41,8 +41,6 @@ group_id = data['group_id']
 chat_id = data['chat_id']
 local = data['local_ip']
 
-global ip_address
-
 
 def write_to_log(log_data: str):
     with open(log_file_path, 'a') as log:
@@ -52,15 +50,20 @@ def write_to_log(log_data: str):
 def socks():
     while True:
         global content, client
+        content = ''
         try:
             global off_time
             client, addr = s.accept()
-            content = client.recv(1024).decode()
+            try:
+                content = client.recv(1024).decode('utf-8')
+            except UnicodeDecodeError:
+                content = ''
             # print(content)
             temp_time = dt.now().strftime('%Y-%m-%d, %H:%M:%S')
-            write_to_log(f'Received from ESP: {content}, at: {temp_time} \n')
-            if content == 'Power is OK':
-                off_time = int(time.time())
+            if dt.now().minute % 10 == 0 and (0 < dt.now().second < 10):
+                write_to_log(f'Received from ESP: {content}, at: {temp_time} \n')
+            # if content == 'Power is OK':
+            off_time = int(time.time())
         except OSError as e:
             print('Socket Error:', e)
             temp_time = dt.now().strftime('%Y-%m-%d, %H:%M:%S')
@@ -75,36 +78,60 @@ def timer():
     while True:
         cur_time = int(time.time())
         state = not (cur_time > off_time + delay_time)
-        # print(state, prev_state)
         power_check = content == 'Power is OK'
-        if state is not prev_state:
+        print(f's:{state}, ps:{prev_state}, pc:{power_check}, ot:{off_time}, c:{content}')
+        if state != prev_state:
             if state and power_check:
                 print('On', dt.now().strftime('%Y-%m-%d, %H:%M:%S'))
                 timestamp = dt.now().strftime('%Y-%m-%d, %H:%M:%S')
-                bot.send_message(chat_id=group_id, text=f'🟢 Power is ON at: {timestamp}', timeout=5)
+                send_message(chat_id=group_id, text=f'🟢 Power is ON at: {timestamp}', timeout=5)
                 server_status = '🟢'
-                write_to_log(f'Change status: Power is ON at: {timestamp}, state={state}, prev_state={prev_state} \n')
-            elif not state and not power_check:
+                write_to_log(
+                    f't: {timestamp},'
+                    f's:{state},'
+                    f'p_s:{prev_state},'
+                    f'p_c:{power_check},'
+                    f'o_t:{off_time},'
+                    f'c:{content}\n')
+            elif not power_check:
                 print('Off', dt.now().strftime('%Y-%m-%d, %H:%M:%S'))
                 timestamp = dt.now().strftime('%Y-%m-%d, %H:%M:%S')
-                bot.send_message(chat_id=group_id, text=f'🔴 Power is OFF at: {timestamp}', timeout=5)
+                send_message(chat_id=group_id, text=f'🔴 Power is OFF at: {timestamp}', timeout=5)
                 server_status = '🔴'
-                write_to_log(f'Change status: Power is OFF at: {timestamp},'
-                             f' Application time: {cur_time},'
-                             f' Delay time: {off_time + delay_time},'
-                             f', state={state}, prev_state={prev_state} \n')
-            prev_state = state
+                write_to_log(f't: {timestamp},'
+                             f' s:{state},'
+                             f' p_s:{prev_state},'
+                             f'p_c:{power_check},'
+                             f' o_t:{off_time},'
+                             f' c:{content}\n')
+        prev_state = state
         time.sleep(0.1)
+
+
+def send_message(chat_id, text, timeout=10):
+    try:
+        bot.send_message(chat_id=chat_id, text=text, timeout=timeout)
+    except Exception as e:
+        write_to_log(f'Telegram sending error: {e}')
+        return
 
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, f"Bot is working. Status: {server_status}")
+    try:
+        bot.reply_to(message, f"Bot is working. Status: {server_status}")
+    except Exception as e:
+        write_to_log(f'Telegram sending error: {e}')
+        return
 
 
 @bot.message_handler(commands=['ip'])
 def send_welcome(message):
-    bot.reply_to(message, text=f'{ip_address}:{port}')
+    try:
+        bot.reply_to(message, text=f'{ip_address}:{port}')
+    except Exception as e:
+        write_to_log(f'Telegram sending error: {e}')
+        return
 
 
 @bot.message_handler(commands=['log'])
@@ -113,32 +140,54 @@ def send_welcome(message):
         msg = log.read()
         file_obj = BytesIO(msg)
         file_obj.name = 'log.txt'
-    bot.reply_to(message, text=f'Log file opened: {msg}')
-    bot.send_document(chat_id, document=file_obj)
+        try:
+            bot.reply_to(message, text=f'Log file generated')
+            bot.send_document(chat_id, document=file_obj)
+        except Exception as e:
+            write_to_log(f'Telegram sending error: {e}')
+            return
 
 
 @bot.message_handler(commands=['clearlog'])
 def send_welcome(message):
     open(log_file_path, 'w').close()
-    bot.reply_to(message, text=f'Log file erased')
+    try:
+        bot.reply_to(message, text=f'Log file erased')
+    except Exception as e:
+        write_to_log(f'Telegram sending error: {e}')
+        return
 
 
 @bot.message_handler(commands=['state'])
 def send_welcome(message):
     timestamp = dt.now().strftime('%Y-%m-%d, %H:%M:%S')
-    write_to_log(f'Debug message at: {timestamp}, state={state}, prev_state={prev_state} \n')
-    result = s.connect_ex((local, port))
-    bot.reply_to(message, text=f'Log updated, states: state={state}, prev_state={prev_state}, open socket: {result}')
+    write_to_log(f't: {timestamp}, s:{state}, p_s:{prev_state},p_c:{power_check}, o_t:{off_time}, c:{content}\n')
+    try:
+        bot.reply_to(message,
+                     text=f't: {timestamp},'
+                          f's:{state},'
+                          f'p_s:{prev_state},'
+                          f'p_c:{power_check},'
+                          f'o_t:{off_time},'
+                          f' c:{content},'
+                          f' s_s:{server_status}\n')
+    except Exception as telegram_exception:
+        write_to_log(f'Telegram sending error: {telegram_exception}')
+        return
 
 
 @bot.message_handler(commands=['restart'])
 def send_welcome(message):
-    bot.reply_to(message, text=f'Restarting process')
+    try:
+        bot.reply_to(message, text=f'Restarting process')
+    except Exception as e:
+        write_to_log(f'Telegram sending error: {e}')
+        return
     os.popen("sudo systemctl restart esp")
 
 
 if __name__ == "__main__":
-    global s
+    global s, ip_address
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -157,15 +206,15 @@ if __name__ == "__main__":
         ip_address = socket.gethostbyname(local)
     elif WIN:
         ip_address = socket.gethostbyname(hostname)
-    off_time = 0
-    delay_time = 30
+    delay_time = 5
     cur_time = time.time()
-    state = True
-    prev_state = False
+    state = False
+    prev_state = True
+    off_time = cur_time
     temp_time = dt.now().strftime('%Y-%m-%d, %H:%M:%S')
     write_to_log(f'Application started at: {temp_time} \n')
     print(f"IP Address: {ip_address}")
-    bot.send_message(chat_id=chat_id, text=f'Bot started successfully', timeout=5)
+    send_message(chat_id=chat_id, text=f'Bot started successfully', timeout=5)
     t1 = threading.Thread(target=timer)
     t2 = threading.Thread(target=socks)
     t2.start()
