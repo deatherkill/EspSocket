@@ -79,10 +79,10 @@ def timer():
         cur_time = int(time.time())
         state = not (cur_time > off_time + delay_time)
         power_check = content == 'Power is OK'
-        print(f's:{state}, ps:{prev_state}, pc:{power_check}, ot:{off_time}, c:{content}')
+        # print(f's:{state}, ps:{prev_state}, pc:{power_check}, ot:{off_time}, c:{content}')
         if state != prev_state:
-            if state and power_check:
-                print('On', dt.now().strftime('%Y-%m-%d, %H:%M:%S'))
+            if state and power_check and server_status != '🟢':
+                # print('On', dt.now().strftime('%Y-%m-%d, %H:%M:%S'))
                 timestamp = dt.now().strftime('%Y-%m-%d, %H:%M:%S')
                 send_message(chat_id=group_id, text=f'🟢 Power is ON at: {timestamp}', timeout=5)
                 server_status = '🟢'
@@ -93,8 +93,8 @@ def timer():
                     f'p_c:{power_check},'
                     f'o_t:{off_time},'
                     f'c:{content}\n')
-            elif not power_check:
-                print('Off', dt.now().strftime('%Y-%m-%d, %H:%M:%S'))
+            elif not power_check and (server_status == '🟢' or server_status == 'Undefined'):
+                # print('Off', dt.now().strftime('%Y-%m-%d, %H:%M:%S'))
                 timestamp = dt.now().strftime('%Y-%m-%d, %H:%M:%S')
                 send_message(chat_id=group_id, text=f'🔴 Power is OFF at: {timestamp}', timeout=5)
                 server_status = '🔴'
@@ -161,13 +161,12 @@ def send_welcome(message):
 @bot.message_handler(commands=['state'])
 def send_welcome(message):
     timestamp = dt.now().strftime('%Y-%m-%d, %H:%M:%S')
-    write_to_log(f't: {timestamp}, s:{state}, p_s:{prev_state},p_c:{power_check}, o_t:{off_time}, c:{content}\n')
+    write_to_log(f't: {timestamp}, s:{state}, p_s:{prev_state}, o_t:{off_time}, c:{content}\n')
     try:
         bot.reply_to(message,
                      text=f't: {timestamp},'
                           f's:{state},'
                           f'p_s:{prev_state},'
-                          f'p_c:{power_check},'
                           f'o_t:{off_time},'
                           f' c:{content},'
                           f' s_s:{server_status}\n')
